@@ -21,9 +21,32 @@ from rich.console import Console
 from rich.table import Table
 
 from cleanroom.audit import run_audit, write_audit_outputs
+from cleanroom.audit._issue import Issue
+from cleanroom.enrichment import run_enrichment, write_enrichment_outputs
+from cleanroom.resolution import run_resolution, write_resolution_outputs
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
+
+
+def _load_issues(path: Path) -> list[Issue]:
+    """Re-hydrate audit issues from issues.jsonl."""
+    import json
+    issues: list[Issue] = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        d = json.loads(line)
+        issues.append(Issue(**d))
+    return issues
+
+
+def _read_accounts_csv(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path, dtype=str, keep_default_na=False).copy()
+    for col in ("annual_revenue", "employee_count", "founded_year"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
 
 
 def _print_audit_summary(result, output_path: Path) -> None:
@@ -63,14 +86,8 @@ def audit(
     out: Path = typer.Option(Path("data/audit"), "--out", help="Where issues.jsonl + summary.json land"),
 ):
     """Non-destructive audit: dupes, schema, completeness, orphans, lifecycle."""
-    accounts = pd.read_csv(accounts_csv, dtype=str, keep_default_na=False).copy()
+    accounts = _read_accounts_csv(accounts_csv)
     contacts = pd.read_csv(contacts_csv, dtype=str, keep_default_na=False).copy()
-
-    # Re-cast numeric-looking fields back to numeric so validators behave.
-    for col in ("annual_revenue", "employee_count", "founded_year"):
-        if col in accounts.columns:
-            accounts[col] = pd.to_numeric(accounts[col], errors="coerce")
-
     result = run_audit(accounts, contacts)
     write_audit_outputs(result, out)
     _print_audit_summary(result, out)
@@ -82,15 +99,49 @@ def audit(
 
 
 @app.command()
-def resolve():
-    """Resolve dedup gray-zone pairs via LLM tie-breaker. (Phase 4 — coming.)"""
-    raise typer.Exit(code=2) from NotImplementedError("resolve lands in Phase 4")
+def resolve(
+    accounts_csv: Path = typer.Argument(..., exists=True),
+    issues_jsonl: Path = typer.Argument(..., exists=True, help="issues.jsonl from the audit stage"),
+    out: Path = typer.Option(Path("data/audit"), "--out"),
+    live: bool = typer.Option(False, "--live", help="Use real Claude Haiku for tie-break (needs ANTHROPIC_API_KEY)"),
+    cap: int = typer.Option(None, "--cap", help="Override LLM_TIEBREAK_CAP (default 500)"),
+):
+    """Run LLM tie-break on gray-zone duplicate pairs + apply merges."""
+    accounts = _read_accounts_csv(accounts_csv)
+    issues = _load_issues(issues_jsonl)
+    resolved, plan, decisions, telemetry, _ = run_resolution(accounts, issues, live=live, cap=cap)
+    write_resolution_outputs(out, resolved, plan, decisions, telemetry)
+
+    console.print(f"[cyan]→ tie-break mode:[/cyan] {telemetry['mode']}")
+    console.print(f"[cyan]→ gray-zone pairs scored:[/cyan] {telemetry['n_gray_zone_pairs']}")
+    if telemetry["cap_hit"]:
+        console.print(f"[yellow]⚠ cap of {telemetry['cap']} hit — remaining pairs sampled out[/yellow]")
+    console.print(f"[cyan]→ same-entity decisions:[/cyan] {telemetry['n_same_entity_true']}")
+    console.print(f"[cyan]→ merge groups formed:[/cyan] {telemetry['n_merge_groups']}")
+    console.print(f"[green]✓ {len(accounts)} → {len(resolved)} accounts after merge[/green]")
+    console.print(f"[dim]→ wrote {out / 'accounts_resolved.csv'}, merge_plan.json, decisions_log.jsonl[/dim]")
 
 
 @app.command()
-def enrich():
-    """Fill missing fields via Apollo → mocks → Claude waterfall. (Phase 4 — coming.)"""
-    raise typer.Exit(code=2) from NotImplementedError("enrich lands in Phase 4")
+def enrich(
+    accounts_csv: Path = typer.Argument(..., exists=True, help="Use accounts_resolved.csv from `resolve`"),
+    out: Path = typer.Option(Path("data/enrichment"), "--out"),
+    cache: Path = typer.Option(Path("data/enrichment/cache.json"), "--cache"),
+    live: bool = typer.Option(False, "--live", help="Real Apollo + real Claude (needs APOLLO_API_KEY + ANTHROPIC_API_KEY)"),
+):
+    """Fill blank fields via Apollo → mock_clearbit → claude_websearch waterfall."""
+    accounts = _read_accounts_csv(accounts_csv)
+    enriched, tracker = run_enrichment(accounts, live=live, cache_path=cache)
+    write_enrichment_outputs(out, enriched, tracker)
+
+    by_source = tracker.by_source()
+    by_field = tracker.by_field()
+    by_conf = tracker.by_confidence()
+    console.print(f"[cyan]→ fields filled:[/cyan] {len(tracker)}")
+    console.print(f"[cyan]→ by source:[/cyan] {by_source}")
+    console.print(f"[cyan]→ by field:[/cyan] {by_field}")
+    console.print(f"[cyan]→ by confidence:[/cyan] {by_conf}")
+    console.print(f"[dim]→ wrote {out / 'accounts_enriched.csv'} + field_metadata.jsonl[/dim]")
 
 
 @app.command()

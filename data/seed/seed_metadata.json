@@ -1,0 +1,8 @@
+{
+  "config_path": "/Users/ryan/Documents/Claude/Projects/GTME portfolio/cleanroom/src/cleanroom/seed/seed_config.yaml",
+  "seed": 42,
+  "n_accounts": 1227,
+  "n_contacts": 2776,
+  "n_unique_account_names": 1151,
+  "n_unique_domains": 1030
+}

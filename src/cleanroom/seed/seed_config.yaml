@@ -1,0 +1,83 @@
+# Cleanroom seed config — all flaw rates in one place.
+#
+# Edit here, not in the generator code. The generator + flaw_injector
+# read this verbatim so the same config + same seed always produces
+# the same messy dataset.
+
+random_seed: 42
+
+dataset:
+  default_accounts: 1000
+  default_contacts_per_account_mean: 3
+  default_contacts_per_account_max: 8
+  benchmark_accounts: 5000
+
+# --- Duplicate accounts (target ~12% of accounts) ----------------------------
+# Of accounts that get duplicated, each gets 1–3 extra rows, distributed
+# across the variant patterns below.
+duplicates:
+  account_dup_pct: 0.12         # fraction of accounts that get duplicated
+  max_dup_copies: 3             # max extra rows per duplicated account
+  pattern_weights:              # how often each variant pattern is used
+    case_whitespace: 0.30       # "Acme Corp" -> "ACME CORP" / "acme  corp "
+    legal_suffix: 0.30          # "Acme" -> "Acme Corp" / "Acme Corporation" / "Acme, Inc."
+    typo: 0.20                  # "Acme Corp" -> "Acmee Corp" / "Acne Corp"
+    domain_variant: 0.20        # "acme.com" -> "getacme.com" / "acme.io"
+
+# --- Contact-level duplicates ------------------------------------------------
+contact_duplicates:
+  variant_email_pct: 0.08       # same person with john.smith@ + jsmith@
+  name_swap_pct: 0.02           # first/last swapped
+
+# --- Completeness gaps (blank field rates) -----------------------------------
+completeness_gaps:
+  account:
+    industry: 0.30
+    annual_revenue: 0.25
+    employee_count: 0.20
+    country: 0.15
+    phone: 0.10
+  contact:
+    phone: 0.20
+    title: 0.10
+
+# --- Schema violations (populated but malformed) -----------------------------
+# Independent of blanks above — these apply to non-blank values.
+schema_violations:
+  invalid_state_code: 0.05      # accounts with "ZZ" instead of a real US state
+  bad_phone_format: 0.15        # populated phones that aren't E.164 (+1XXXXXXXXXX)
+  future_founded_year: 0.02     # founded_year > current_year
+  invalid_email: 0.04           # missing @, trailing whitespace, etc.
+
+# --- Lifecycle / ownership errors --------------------------------------------
+lifecycle:
+  orphan_account_pct: 0.05      # accounts with zero contacts
+  null_account_id_pct: 0.03     # contacts with NULL account_id
+  inactive_owner_pct: 0.08      # records owned by "inactive_user_*"
+  closed_won_no_contact_pct: 0.02  # account in "Customer" stage but no contacts
+
+# --- Hero dupes (always present, low IDs, for demo legibility) ---------------
+# These ensure `head -20 accounts.csv` shows obvious dupes during the Loom.
+# Each entry is a logical company + its variants. The first variant is canonical.
+hero_dupes:
+  - canonical_name: "Acme Corporation"
+    canonical_domain: "acme.com"
+    industry: "Manufacturing"
+    variants:
+      - { name: "Acme Corp",        domain: "acme.com" }
+      - { name: "ACME CORP",        domain: "acme.com" }
+      - { name: "Acme, Inc.",       domain: "getacme.com" }
+      - { name: "Acmee Corp",       domain: "acme.io" }       # typo variant
+  - canonical_name: "Globex Industries"
+    canonical_domain: "globex.com"
+    industry: "Energy"
+    variants:
+      - { name: "Globex",                domain: "globex.com" }
+      - { name: "globex industries",     domain: "globex.com" }
+      - { name: "Globex Industries LLC", domain: "globex.io" }
+  - canonical_name: "Initech"
+    canonical_domain: "initech.com"
+    industry: "Software"
+    variants:
+      - { name: "Initech LLC",  domain: "initech.com" }
+      - { name: "INITECH",      domain: "getinitech.com" }

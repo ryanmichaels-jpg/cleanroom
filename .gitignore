@@ -17,8 +17,7 @@ venv/
 # Per-run outputs (audit logs + enrichment cache are gitignored;
 # the synthetic seed CSVs in data/seed/ are committed for the demo)
 data/audit/
-data/enrichment/cache.json
-data/enrichment/*.jsonl
+data/enrichment/
 data/push/
 
 # Real data (never commit; demo uses synthetic only)

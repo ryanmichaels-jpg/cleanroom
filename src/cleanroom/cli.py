@@ -145,9 +145,49 @@ def enrich(
 
 
 @app.command()
-def push():
-    """Push cleaned records to a Salesforce dev org. (Phase 5 — coming.)"""
-    raise typer.Exit(code=2) from NotImplementedError("push lands in Phase 5")
+def push(
+    accounts_csv: Path = typer.Argument(..., exists=True, help="Use accounts_enriched.csv from `enrich`"),
+    merge_plan_json: Path = typer.Argument(..., exists=True, help="merge_plan.json from `resolve`"),
+    metadata_jsonl: Path = typer.Argument(..., exists=True, help="field_metadata.jsonl from `enrich`"),
+    out: Path = typer.Option(Path("data/push"), "--out"),
+    commit: bool = typer.Option(False, "--commit", help="Actually push (else dry-run + manifest only)"),
+):
+    """Push cleaned canonical accounts to a Salesforce dev org via Bulk API.
+
+    Dry-run by default — writes data/push/push_manifest.jsonl with the records
+    that would have been upserted. Pass --commit to hit the SF Bulk API."""
+    import json as _json
+
+    from cleanroom.enrichment.confidence_tracker import ConfidenceTracker, FieldMetadata
+    from cleanroom.push.salesforce_upsert import push_accounts
+
+    accounts = _read_accounts_csv(accounts_csv)
+    plan_data = _json.loads(merge_plan_json.read_text())
+    canonical_map: dict[str, str] = {}
+    for entry in plan_data.get("plan", []):
+        for merged_id in entry["merged_ids"]:
+            canonical_map[merged_id] = entry["canonical_id"]
+        canonical_map[entry["canonical_id"]] = entry["canonical_id"]
+
+    # Re-hydrate ConfidenceTracker from field_metadata.jsonl
+    tracker = ConfidenceTracker()
+    for line in metadata_jsonl.read_text().splitlines():
+        if not line.strip():
+            continue
+        d = _json.loads(line)
+        tracker._rows.append(FieldMetadata(**d))
+
+    result = push_accounts(accounts, canonical_map, tracker, out, commit=commit)
+    console.print(f"[cyan]→ push mode:[/cyan] {result.mode}")
+    console.print(f"[cyan]→ records planned:[/cyan] {result.n_records_planned}")
+    if result.mode == "dry_run":
+        console.print(f"[dim]→ manifest at {result.manifest_path}[/dim]")
+    else:
+        console.print(f"[green]→ pushed: {result.n_records_pushed}[/green]")
+        if result.n_errors:
+            console.print(f"[red]→ errors: {result.n_errors}[/red]")
+            for err in result.error_samples:
+                console.print(f"  {err}")
 
 
 def main() -> None:

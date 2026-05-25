@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cleanroom — Before/After Report</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --border: #2a2f3a;
+    --ink: #e7eaf0;
+    --dim: #8a93a4;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --accent: #60a5fa;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+               font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 28px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--dim); margin: 0 0 24px; }
+  .narrative { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+               padding: 18px 22px; margin: 0 0 28px; font-size: 15px; line-height: 1.6; }
+  .narrative strong { color: var(--accent); }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 0 0 24px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+  .stat .label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 6px; }
+  .stat .delta-line { display: flex; align-items: baseline; gap: 10px; }
+  .stat .before { color: var(--dim); text-decoration: line-through; font-size: 16px; }
+  .stat .after { font-size: 24px; font-weight: 600; color: var(--ink); }
+  .stat .delta { font-size: 12px; color: var(--green); }
+  .stat.warn .after { color: var(--amber); }
+
+  h2 { font-size: 18px; margin: 32px 0 12px; letter-spacing: -0.005em; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin: 0 0 16px; }
+
+  /* horizontal SVG-free bar chart using pure CSS */
+  .bar-row { display: grid; grid-template-columns: 160px 1fr 80px; gap: 12px; align-items: center; margin: 6px 0; }
+  .bar-row .name { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .bar-row .bar-bg { position: relative; height: 14px; background: #20242e; border-radius: 4px; overflow: hidden; }
+  .bar-row .bar-fg { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 4px; }
+  .bar-row .bar-fg.before { background: #555; opacity: 0.7; }
+  .bar-row .bar-fg.after { background: var(--green); }
+  .bar-row .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  /* paired before/after bars */
+  .pair-row { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: center; margin: 8px 0; }
+  .pair-bars { display: grid; gap: 3px; }
+  .pair-bars .bar-row { grid-template-columns: 1fr 60px; }
+
+  /* merge group callouts */
+  .merge-card { background: #1a1f29; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin: 8px 0; }
+  .merge-card .canonical { color: var(--green); font-weight: 600; }
+  .merge-card .arrow { color: var(--dim); margin: 0 6px; }
+  .merge-card .variant { color: var(--dim); text-decoration: line-through; }
+  .merge-card .conf { float: right; font-size: 12px; color: var(--dim); }
+  .merge-card .reasoning { color: var(--dim); font-size: 12px; margin-top: 4px; font-style: italic; }
+
+  /* issue counts table */
+  table.issues { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.issues th, table.issues td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  table.issues th { color: var(--dim); font-weight: 500; text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
+  table.issues td.num { text-align: right; }
+  table.issues .high { color: var(--red); }
+  table.issues .medium { color: var(--amber); }
+  table.issues .low { color: var(--green); }
+
+  /* small text */
+  .small { font-size: 12px; color: var(--dim); }
+  footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--dim); font-size: 12px; }
+  code { background: #20242e; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Cleanroom — before/after report</h1>
+  <p class="subtitle">Run at {{ generated_at }} · seed: {{ seed_csv_path }} · dataset: {{ n_accounts_before }} accounts → {{ n_accounts_after }} after merge</p>
+
+  <div class="narrative">
+    {{ narrative_paragraph | safe }}
+  </div>
+
+  <div class="grid">
+    <div class="stat">
+      <div class="label">Accounts</div>
+      <div class="delta-line">
+        <span class="before">{{ n_accounts_before }}</span>
+        <span class="after">{{ n_accounts_after }}</span>
+        <span class="delta">−{{ n_accounts_merged_away }} merged</span>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="label">Duplicate pairs caught</div>
+      <div class="delta-line">
+        <span class="after">{{ n_dup_pairs }}</span>
+        <span class="delta">{{ n_high_severity_dups }} auto, {{ n_llm_resolved }} via LLM</span>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="label">Fields filled by enrichment</div>
+      <div class="delta-line">
+        <span class="after">{{ n_fields_enriched }}</span>
+        <span class="delta">across {{ n_distinct_fields }} fields</span>
+      </div>
+    </div>
+    <div class="stat {% if n_high_after > 0 %}warn{% endif %}">
+      <div class="label">Critical (high-severity) issues</div>
+      <div class="delta-line">
+        <span class="before">{{ n_high_before }}</span>
+        <span class="after">{{ n_high_after }}</span>
+        <span class="delta">−{{ n_high_before - n_high_after }}</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Issue counts (before → after)</h2>
+  <div class="panel">
+    <table class="issues">
+      <thead>
+        <tr><th>Issue type</th><th class="num">Before</th><th class="num">After</th><th class="num">Δ</th></tr>
+      </thead>
+      <tbody>
+        {% for row in issue_table %}
+        <tr>
+          <td>{{ row.type }}</td>
+          <td class="num">{{ row.before }}</td>
+          <td class="num">{{ row.after }}</td>
+          <td class="num {% if row.delta > 0 %}low{% endif %}">−{{ row.delta }}</td>
+        </tr>
+        {% endfor %}
+        <tr><td><strong>TOTAL</strong></td>
+            <td class="num"><strong>{{ total_before }}</strong></td>
+            <td class="num"><strong>{{ total_after }}</strong></td>
+            <td class="num low"><strong>−{{ total_before - total_after }}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Per-field fill rates (account)</h2>
+  <div class="panel">
+    {% for f in fill_rate_rows %}
+    <div class="pair-row">
+      <div class="name">{{ f.field }}</div>
+      <div class="pair-bars">
+        <div class="bar-row">
+          <div class="bar-bg"><div class="bar-fg before" style="width: {{ f.before_pct }}%"></div></div>
+          <div class="pct small">{{ f.before_pct }}% before</div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-bg"><div class="bar-fg after"  style="width: {{ f.after_pct }}%"></div></div>
+          <div class="pct">{{ f.after_pct }}% after</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>Top merge groups (the hero dupes)</h2>
+  <div class="panel">
+    {% for g in top_merge_groups %}
+    <div class="merge-card">
+      <span class="canonical">{{ g.canonical_name }}</span>
+      <span class="conf">confidence: {{ g.confidence }}</span>
+      <div>
+        {% for v in g.variants %}<span class="variant">{{ v }}</span>{% if not loop.last %}<span class="arrow">,</span>{% endif %}{% endfor %}
+        <span class="arrow">→</span> <span class="canonical">{{ g.canonical_name }}</span>
+      </div>
+      <div class="reasoning">{{ g.reasoning }}</div>
+    </div>
+    {% endfor %}
+    {% if not top_merge_groups %}
+    <p class="small">No merges in this run.</p>
+    {% endif %}
+  </div>
+
+  <h2>Enrichment sources used</h2>
+  <div class="panel">
+    {% for s in enrichment_source_rows %}
+    <div class="bar-row">
+      <div class="name">{{ s.source }}</div>
+      <div class="bar-bg"><div class="bar-fg" style="width: {{ s.pct_of_max }}%; background: {{ s.color }}"></div></div>
+      <div class="pct">{{ s.count }} fills</div>
+    </div>
+    {% endfor %}
+    <p class="small" style="margin-top: 12px">By confidence: {{ confidence_breakdown }}.</p>
+  </div>
+
+  <h2>Stage timing</h2>
+  <div class="panel">
+    {% for s in stage_timing %}
+    <div class="bar-row">
+      <div class="name">{{ s.stage }}</div>
+      <div class="bar-bg"><div class="bar-fg" style="width: {{ s.pct }}%; background: var(--accent)"></div></div>
+      <div class="pct">{{ s.seconds }}s</div>
+    </div>
+    {% endfor %}
+    <p class="small" style="margin-top: 8px">Total: {{ total_seconds }}s on {{ n_accounts_before }} accounts × {{ n_contacts_before }} contacts.</p>
+  </div>
+
+  <footer>
+    Cleanroom · CRM data quality + AI-assisted enrichment audit · run in {{ mode }} mode ·
+    rapidfuzz + Claude (Haiku 4.5 for tie-break, Sonnet 4.6 for this narrative when --live).
+    Patterns borrowed from gooseworks-ai/goose-skills (contact-cache, apollo-lead-finder, inbound-lead-enrichment).
+  </footer>
+
+</div>
+</body>
+</html>
